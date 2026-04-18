@@ -1,102 +1,128 @@
 import streamlit as st
-import requests
+import pandas as pd
+import joblib
+import numpy as np
 
 # -------------------------------
-# App Configuration
+# PAGE CONFIG
 # -------------------------------
 st.set_page_config(
-    page_title="Customer Churn Risk Intelligence",
-    page_icon="📉",
-    layout="centered"
+    page_title="Customer Churn Intelligence",
+    layout="wide",
+    page_icon="📊"
 )
 
-st.title("📉 Customer Churn Risk Intelligence")
-st.write("Predict the likelihood of a customer churning using ML")
+# -------------------------------
+# LOAD MODEL
+# -------------------------------
+@st.cache_resource
+def load_model():
+    return joblib.load("models/churn_pipeline.pkl")
 
-API_URL = "http://127.0.0.1:8000/predict"
+model = load_model()
 
 # -------------------------------
-# Input Form
+# HEADER
 # -------------------------------
-with st.form("churn_form"):
-    st.subheader("Customer Details")
+st.title("📊 Customer Churn Risk Intelligence")
+st.markdown("### Predict churn probability and understand customer risk")
 
-    gender = st.selectbox("Gender", ["Male", "Female"])
-    SeniorCitizen = st.selectbox("Senior Citizen", [0, 1])
-    Partner = st.selectbox("Partner", ["Yes", "No"])
-    Dependents = st.selectbox("Dependents", ["Yes", "No"])
-    tenure = st.number_input("Tenure (months)", min_value=0, value=12)
-
-    PhoneService = st.selectbox("Phone Service", ["Yes", "No"])
-    MultipleLines = st.selectbox("Multiple Lines", ["Yes", "No", "No phone service"])
-    InternetService = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"])
-
-    OnlineSecurity = st.selectbox("Online Security", ["Yes", "No", "No internet service"])
-    OnlineBackup = st.selectbox("Online Backup", ["Yes", "No", "No internet service"])
-    DeviceProtection = st.selectbox("Device Protection", ["Yes", "No", "No internet service"])
-    TechSupport = st.selectbox("Tech Support", ["Yes", "No", "No internet service"])
-    StreamingTV = st.selectbox("Streaming TV", ["Yes", "No", "No internet service"])
-    StreamingMovies = st.selectbox("Streaming Movies", ["Yes", "No", "No internet service"])
-
-    Contract = st.selectbox("Contract", ["Month-to-month", "One year", "Two year"])
-    PaperlessBilling = st.selectbox("Paperless Billing", ["Yes", "No"])
-    PaymentMethod = st.selectbox(
-        "Payment Method",
-        ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"]
-    )
-
-    MonthlyCharges = st.number_input("Monthly Charges", min_value=0.0, value=70.0)
-    TotalCharges = st.number_input("Total Charges", min_value=0.0, value=1000.0)
-
-    submitted = st.form_submit_button("Predict Churn Risk")
+st.divider()
 
 # -------------------------------
-# Prediction Logic
+# LAYOUT
 # -------------------------------
-if submitted:
-    payload = {
-        "gender": gender,
-        "SeniorCitizen": SeniorCitizen,
-        "Partner": Partner,
-        "Dependents": Dependents,
-        "tenure": tenure,
-        "PhoneService": PhoneService,
-        "MultipleLines": MultipleLines,
-        "InternetService": InternetService,
-        "OnlineSecurity": OnlineSecurity,
-        "OnlineBackup": OnlineBackup,
-        "DeviceProtection": DeviceProtection,
-        "TechSupport": TechSupport,
-        "StreamingTV": StreamingTV,
-        "StreamingMovies": StreamingMovies,
-        "Contract": Contract,
-        "PaperlessBilling": PaperlessBilling,
-        "PaymentMethod": PaymentMethod,
-        "MonthlyCharges": MonthlyCharges,
-        "TotalCharges": TotalCharges
-    }
+col1, col2 = st.columns([2, 1])
+
+# -------------------------------
+# INPUT SECTION
+# -------------------------------
+with col1:
+    st.subheader("🧾 Customer Profile")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        gender = st.selectbox("Gender", ["Male", "Female"])
+        senior = st.selectbox("Senior Citizen", [0, 1])
+        partner = st.selectbox("Partner", ["Yes", "No"])
+
+    with c2:
+        dependents = st.selectbox("Dependents", ["Yes", "No"])
+        tenure = st.slider("Tenure (months)", 0, 72, 12)
+        monthly = st.number_input("Monthly Charges", 0.0, 200.0, 70.0)
+
+    with c3:
+        total = st.number_input("Total Charges", 0.0, 10000.0, 1000.0)
+        contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"])
+        payment = st.selectbox("Payment Method", ["Electronic check", "Mailed check", "Bank transfer", "Credit card"])
+
+# -------------------------------
+# PREDICTION
+# -------------------------------
+if st.button("🚀 Predict Churn", use_container_width=True):
 
     try:
-        response = requests.post(API_URL, json=payload)
+        input_data = pd.DataFrame([{
+            "gender": gender,
+            "SeniorCitizen": senior,
+            "Partner": partner,
+            "Dependents": dependents,
+            "tenure": tenure,
+            "MonthlyCharges": monthly,
+            "TotalCharges": total,
+            "Contract": contract,
+            "PaymentMethod": payment
+        }])
 
-        if response.status_code == 200:
-            result = response.json()
+        prediction = model.predict(input_data)[0]
+        probability = model.predict_proba(input_data)[0][1]
 
-            # ✅ FIXED KEYS (THIS WAS THE BUG)
-            churn_prediction = result["churn_prediction"]
-            churn_probability = result["churn_probability"]
+        # -------------------------------
+        # OUTPUT PANEL
+        # -------------------------------
+        with col2:
+            st.subheader("📊 Prediction Result")
 
-            st.subheader("Prediction Result")
+            st.metric(
+                label="Churn Probability",
+                value=f"{probability:.2%}"
+            )
 
-            if churn_prediction == 1:
-                st.error(f"⚠️ High Churn Risk\n\nProbability: **{churn_probability:.2%}**")
+            # Risk Level
+            if probability > 0.7:
+                st.error("🔴 High Risk")
+            elif probability > 0.4:
+                st.warning("🟠 Medium Risk")
             else:
-                st.success(f"✅ Low Churn Risk\n\nProbability: **{churn_probability:.2%}**")
+                st.success("🟢 Low Risk")
 
-        else:
-            st.error(f"API Error: {response.status_code}")
-            st.json(response.json())
+            # Progress bar
+            st.progress(float(probability))
+
+            st.markdown("### 📈 Insights")
+
+            insights = []
+
+            if tenure < 12:
+                insights.append("Low tenure → higher churn risk")
+            if contract == "Month-to-month":
+                insights.append("Month-to-month contract increases churn")
+            if monthly > 80:
+                insights.append("High monthly charges detected")
+            if partner == "No":
+                insights.append("Customers without partners churn more")
+
+            if insights:
+                for i in insights:
+                    st.write(f"• {i}")
+            else:
+                st.write("Stable customer profile")
 
     except Exception as e:
-        st.error("❌ Could not connect to FastAPI backend")
-        st.exception(e)
+        st.error(f"Error during prediction: {e}")
+
+# -------------------------------
+# FOOTER
+# -------------------------------
+st.divider()
